@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { buildings, dialogue, type BuildingId, type NpcId, type ZoneKey } from '@/data/portfolio'
+import { buildings, dialogue, dialogueHindi, type BuildingId, type NpcId, type ZoneKey } from '@/data/portfolio'
 import { GameCanvas } from '@/components/game/game-canvas'
 import { ActionButtons, DPad, SpeakerGrill, Stickers } from '@/components/console/controls'
 import { DialogueBox } from '@/components/console/dialogue-box'
@@ -51,7 +51,7 @@ export function ConsoleShell() {
   const engineRef = useRef<GameEngine | null>(null)
   const [modal, setModal] = useState<BuildingId | null>(null)
   const [talkNpc, setTalkNpc] = useState<NpcId | null>(null)
-  const [world, setWorld] = useState<WorldState>({ season: 'spring', night: false })
+  const [world, setWorld] = useState<WorldState>({ season: 'spring', night: false, realm: 'overworld' })
   const [zone, setZone] = useState<ZoneKey>('intro')
   const [muted, setMuted] = useState(false)
   const modalRef = useRef(modal)
@@ -166,7 +166,7 @@ export function ConsoleShell() {
     if (modal || talkNpc) engineRef.current?.clearHeld()
   }, [modal, talkNpc])
 
-  const line = dialogue[zone]
+  const line = world.realm === 'indian' ? dialogueHindi[zone] : dialogue[zone]
   const nearDoor = BUILDING_IDS.has(zone)
   const nearNpc = NPC_IDS.has(zone)
 

@@ -45,7 +45,7 @@ export function Hud({ world, muted, onToggleMute, onFastTravel, disabled }: Prop
         KARTIK RAJ <span className="text-sakura">{'\u2014'}</span> DEV QUEST
       </h1>
       <span className="hidden items-center gap-1 bg-lavender-light px-1.5 py-1 text-ink sm:flex">
-        {SEASONS[world.season].label.toUpperCase()} {'·'} {world.night ? 'NIGHT' : 'DAY'}
+        {world.realm === 'nether' ? 'NETHER · DARK' : world.realm === 'indian' ? 'भारत · INDIA' : `${SEASONS[world.season].label.toUpperCase()} · ${world.night ? 'NIGHT' : 'DAY'}`}
       </span>
       <span className="flex items-center gap-1 bg-sage px-1.5 py-1 text-ink">
         <PixelIcon name="blossom" className="size-2.5 text-peach-deep" />

@@ -14,9 +14,12 @@ import {
   drawProps,
   drawSign,
   drawWater,
+  getKartikLook,
   renderBackground,
+  setDrawRealm,
   setDrawSeason,
   type Dir,
+  type RealmId,
 } from './draw'
 import {
   BRIDGE_ROWS,
@@ -40,7 +43,7 @@ import {
   tileCenter,
   type BuildingLayout,
 } from './map'
-import { FRIEND_LOOKS, drawBubble, drawDragon, drawFish, drawSlime, drawWizard } from './npc-draw'
+import { drawBubble, drawDragon, drawFish, drawFood, drawLotus, drawSlime, drawWizard, getFriendLook } from './npc-draw'
 import { DAY_LENGTH, SEASONS, SEASON_ORDER, darknessAt, duskAt, type SeasonId } from './seasons'
 
 type Phase = 'free' | 'opening' | 'stepIn' | 'irisOut' | 'inside' | 'irisIn' | 'stepOut' | 'closing' | 'talking'
@@ -74,7 +77,7 @@ type FriendState = {
   burnT: number
 }
 
-export type WorldState = { season: SeasonId; night: boolean }
+export type WorldState = { season: SeasonId; night: boolean; realm: RealmId }
 
 export type EngineCallbacks = {
   onZone: (zone: ZoneKey) => void
@@ -190,12 +193,15 @@ export class GameEngine {
   // Easter egg: Sam & Mahi meet on the bridge and pop hearts
   private bridgeDate = {
     state: 'idle' as 'idle' | 'walking' | 'sitting',
-    cooldown: 16,
+    cooldown: 12,
     sitT: 0,
     heartT: 0,
+    gestureT: 0,
+    gesture: 'lotus' as 'lotus' | 'food',
     row: BRIDGE_ROWS[0],
   }
 
+  private realm: RealmId = 'overworld'
   private season: SeasonId = 'spring'
   private cycle = 0.05
   private dark = 0
@@ -549,18 +555,24 @@ export class GameEngine {
     if (bd.state === 'sitting') {
       bd.sitT -= dt
       bd.heartT -= dt
+      bd.gestureT -= dt
       mahi.dir = 'right'
       sam.dir = 'left'
+      if (bd.gestureT <= 0) {
+        bd.gestureT = 2.4
+        bd.gesture = Math.random() < 0.5 ? 'lotus' : 'food'
+      }
       if (bd.heartT <= 0) {
-        bd.heartT = 0.75
+        bd.heartT = 0.55
+        const heartColors = ['#f26a8d', '#ff4d6d', '#ffd166', '#c77dff', '#ff8fa3', '#4cc9f0']
         this.particles.push({
-          x: (mahi.x + sam.x) / 2 + (Math.random() - 0.5) * 8,
-          y: mahi.y - 12,
-          vx: (Math.random() - 0.5) * 8,
-          vy: -14,
+          x: (mahi.x + sam.x) / 2 + (Math.random() - 0.5) * 10,
+          y: mahi.y - 13,
+          vx: (Math.random() - 0.5) * 10,
+          vy: -15,
           life: 0,
-          max: 1.1,
-          color: '#f26a8d',
+          max: 1.15,
+          color: heartColors[Math.floor(Math.random() * heartColors.length)],
           size: 3,
           kind: 'heart',
         })
@@ -851,12 +863,8 @@ export class GameEngine {
   private applySeason(id: SeasonId, announce: boolean) {
     this.season = id
     setDrawSeason(id)
-    const bctx = this.bg.getContext('2d')
-    if (bctx) {
-      bctx.clearRect(0, 0, WIDTH, HEIGHT)
-      renderBackground(bctx)
-    }
-    const count = SEASONS[id].weatherCount
+    this.rebuildBackground()
+    const count = this.realm === 'nether' ? 32 : SEASONS[id].weatherCount
     this.weather = Array.from({ length: count }, () => this.makeWeather(true))
     if (announce) {
       this.flash = Math.max(this.flash, 0.8)
@@ -864,7 +872,38 @@ export class GameEngine {
     }
   }
 
+  private rebuildBackground() {
+    const bctx = this.bg.getContext('2d')
+    if (bctx) {
+      bctx.clearRect(0, 0, WIDTH, HEIGHT)
+      renderBackground(bctx)
+    }
+  }
+
+  private switchRealm(next: RealmId, spawnSide: 'left' | 'right') {
+    this.realm = next
+    setDrawRealm(next)
+    this.rebuildBackground()
+    this.burns = []
+    this.path = []
+    this.pendingBuilding = null
+    this.pendingNpc = null
+    this.player.x = spawnSide === 'left' ? 14 : WIDTH - 14
+    const count = next === 'nether' ? 32 : SEASONS[this.season].weatherCount
+    this.weather = Array.from({ length: count }, () => this.makeWeather(true))
+    this.burst(this.player.x, this.player.y - 6, 20, next === 'nether' ? ['#ff6b2b', '#a855f7', '#ffd166'] : ['#ff9f1c', '#ffd166', '#f48fb1'])
+    this.flash = 0.85
+    playSfx('warp')
+    this.emitWorld(true)
+  }
+
   private updateCycle(dt: number) {
+    if (this.realm === 'nether') {
+      this.dark = 1
+      this.flash = Math.max(0, this.flash - dt / 0.6)
+      this.emitWorld()
+      return
+    }
     this.cycle += dt / DAY_LENGTH
     if (this.cycle >= 1) {
       this.cycle -= 1
@@ -878,11 +917,11 @@ export class GameEngine {
   }
 
   private emitWorld(force = false) {
-    const night = darknessAt(this.cycle) > 0.5
-    const key = `${this.season}:${night}`
+    const night = this.realm === 'nether' ? true : darknessAt(this.cycle) > 0.5
+    const key = `${this.realm}:${this.season}:${night}`
     if (!force && key === this.lastWorld) return
     this.lastWorld = key
-    this.cb.onWorld({ season: this.season, night })
+    this.cb.onWorld({ season: this.season, night, realm: this.realm })
   }
 
   private buildStaticLights(): Light[] {
@@ -956,6 +995,26 @@ export class GameEngine {
       if (!this.collides(p.x, ny)) {
         p.y = ny
         moved = moved || vy !== 0
+      }
+      if (dir === 'left' && nx <= 6) {
+        if (this.realm === 'overworld') {
+          this.switchRealm('nether', 'right')
+          return
+        }
+        if (this.realm === 'indian') {
+          this.switchRealm('overworld', 'right')
+          return
+        }
+      }
+      if (dir === 'right' && nx >= WIDTH - 6) {
+        if (this.realm === 'overworld') {
+          this.switchRealm('indian', 'left')
+          return
+        }
+        if (this.realm === 'nether') {
+          this.switchRealm('overworld', 'left')
+          return
+        }
       }
       p.x = Math.max(6, Math.min(WIDTH - 6, p.x))
       p.y = Math.max(4, Math.min(HEIGHT - 6, p.y))
@@ -1101,6 +1160,11 @@ export class GameEngine {
   private computeZone() {
     if (!this.hasMoved) return
     const p = this.player
+    if (this.bridgeDate.state === 'sitting') {
+      const mx = (this.friends.mahi.x + this.friends.sam.x) / 2
+      const my = (this.friends.mahi.y + this.friends.sam.y) / 2
+      if (Math.hypot(p.x - mx, p.y - my) < 42) return this.setZone('bridgeLove')
+    }
     const npc = this.nearestNpc()
     if (npc && npc.dist <= this.talkRange(npc.id)) return this.setZone(npc.id)
     for (const b of BUILDINGS) {
@@ -1123,6 +1187,20 @@ export class GameEngine {
   /* ---------------------------- particles ---------------------------- */
 
   private makeWeather(randomY = false): Weather {
+    if (this.realm === 'nether') {
+      const ember = Math.random() > 0.45
+      return {
+        x: Math.random() * WIDTH,
+        y: randomY ? Math.random() * HEIGHT : HEIGHT + 4,
+        vx: -4 + Math.random() * 8,
+        vy: -(8 + Math.random() * 14),
+        phase: Math.random() * Math.PI * 2,
+        sway: 6,
+        color: ember ? '#ff7b29' : '#6b5670',
+        w: ember ? 2 : 1,
+        h: ember ? 2 : 1,
+      }
+    }
     const s = SEASONS[this.season]
     const color = s.weatherColors[Math.floor(Math.random() * s.weatherColors.length)]
     const x = Math.random() * (WIDTH + 60) - 40
@@ -1283,6 +1361,10 @@ export class GameEngine {
       w.phase += dt * 2
       w.x += (w.vx + Math.sin(w.phase) * w.sway) * dt
       w.y += w.vy * dt
+      if (this.realm === 'nether') {
+        if (w.y < -4 || w.x < -10 || w.x > WIDTH + 10) Object.assign(w, this.makeWeather(false))
+        continue
+      }
       if (kind === 'pollen') {
         if (w.x < 0) w.x += WIDTH
         if (w.x > WIDTH) w.x -= WIDTH
@@ -1398,23 +1480,34 @@ export class GameEngine {
           ctx.fillStyle = 'rgba(59,42,63,0.22)'
           ctx.fillRect(Math.round(f.x - 5), Math.round(f.y + 4), 10, 2)
           const frame = f.targetX !== null ? WALK_FRAMES[f.frameIdx] : Math.sin(t * 1.5 + f.x) > 0.92 ? 1 : 0
-          drawCharacter(ctx, Math.round(f.x - 6), Math.round(f.y - 11), f.dir, frame, FRIEND_LOOKS[id])
+          drawCharacter(ctx, Math.round(f.x - 6), Math.round(f.y - 11), f.dir, frame, getFriendLook(id, this.realm))
         },
       })
     }
-    entities.push({ y: this.wizard.y + 5, draw: () => drawWizard(ctx, this.wizard.x, this.wizard.y + 5, t, this.wizard.faceLeft) })
+    entities.push({ y: this.wizard.y + 5, draw: () => drawWizard(ctx, this.wizard.x, this.wizard.y + 5, t, this.wizard.faceLeft, this.realm) })
     entities.push({ y: this.dragon.y + 6, draw: () => drawDragon(ctx, this.dragon.x, this.dragon.y + 6, t, this.dragon.faceLeft) })
-    entities.push({ y: SLIME_Y, draw: () => drawSlime(ctx, this.slime.x, SLIME_Y, this.slime.hop, t) })
+    entities.push({ y: SLIME_Y, draw: () => drawSlime(ctx, this.slime.x, SLIME_Y, this.slime.hop, t, this.realm) })
     entities.push({
       y: p.y + 4,
       draw: () => {
         ctx.globalAlpha = p.alpha
         ctx.fillStyle = 'rgba(59,42,63,0.22)'
         ctx.fillRect(Math.round(p.x - 5), Math.round(p.y + 4), 10, 2)
-        drawCharacter(ctx, Math.round(p.x - 6), Math.round(p.y - 11), p.dir, WALK_FRAMES[p.frameIdx])
+        drawCharacter(ctx, Math.round(p.x - 6), Math.round(p.y - 11), p.dir, WALK_FRAMES[p.frameIdx], getKartikLook(this.realm))
         ctx.globalAlpha = 1
       },
     })
+    if (this.bridgeDate.state === 'sitting') {
+      const mx = (this.friends.mahi.x + this.friends.sam.x) / 2
+      const my = (this.friends.mahi.y + this.friends.sam.y) / 2
+      entities.push({
+        y: my + 6,
+        draw: () => {
+          if (this.bridgeDate.gesture === 'lotus') drawLotus(ctx, mx, my - 2)
+          else drawFood(ctx, mx, my - 2)
+        },
+      })
+    }
     entities.sort((a, b) => a.y - b.y).forEach((e) => e.draw())
 
     for (const pt of this.particles) {
@@ -1513,7 +1606,7 @@ export class GameEngine {
     if (l) {
       l.globalCompositeOperation = 'source-over'
       l.clearRect(0, 0, WIDTH, HEIGHT)
-      l.fillStyle = `rgba(22,18,58,${(0.64 * d).toFixed(3)})`
+      l.fillStyle = this.realm === 'nether' ? 'rgba(8,3,10,0.88)' : `rgba(22,18,58,${(0.64 * d).toFixed(3)})`
       l.fillRect(0, 0, WIDTH, HEIGHT)
       l.globalCompositeOperation = 'destination-out'
       for (const li of lights) {

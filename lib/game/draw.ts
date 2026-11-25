@@ -20,18 +20,20 @@ import { SEASONS, type SeasonId, type SeasonPalette } from './seasons'
 type Ctx = CanvasRenderingContext2D
 
 export type Dir = 'up' | 'down' | 'left' | 'right'
+export type RealmId = 'overworld' | 'nether' | 'indian'
 
 let pal: SeasonPalette = SEASONS.spring
+let realm: RealmId = 'overworld'
 
 export function setDrawSeason(id: SeasonId) {
   pal = SEASONS[id]
 }
 
+export function setDrawRealm(id: RealmId) {
+  realm = id
+}
+
 const C = {
-  grassA: '#b4dca0',
-  grassB: '#acd697',
-  grassDark: '#8fc283',
-  grassLight: '#cdeab8',
   path: '#ecdab4',
   pathStone: '#dcc59b',
   pathLight: '#f7ecd2',
@@ -82,6 +84,30 @@ export const KARTIK_LOOK: Look = {
   shoes: '#f5f0e6',
 }
 
+export function getKartikLook(curRealm: RealmId): Look {
+  if (curRealm === 'nether') {
+    return {
+      hair: '#1a141f',
+      top: '#3a2c3d',
+      topDark: '#231926',
+      string: '#ff9e44',
+      pants: '#1c1520',
+      shoes: '#5a3a2a',
+    }
+  }
+  if (curRealm === 'indian') {
+    return {
+      hair: '#241a29',
+      top: '#f2994a',
+      topDark: '#d6742a',
+      string: '#fff3c4',
+      pants: '#fdf6e3',
+      shoes: '#7a4a2a',
+    }
+  }
+  return KARTIK_LOOK
+}
+
 /** Draws a 12x16 villager sprite with its top-left at (ox, oy). frame: 0 idle, 1/2 walk. */
 export function drawCharacter(ctx: Ctx, ox: number, oy: number, dir: Dir, frame: number, look: Look = KARTIK_LOOK) {
   const HAIR = look.hair
@@ -90,7 +116,7 @@ export function drawCharacter(ctx: Ctx, ox: number, oy: number, dir: Dir, frame:
   const STRING = look.string
   const PANTS = look.pants
   const SHOES = look.shoes
-  const SKIN = look.skin ?? '#f3c9a4'
+  const SKIN_C = look.skin ?? '#f3c9a4'
   const flip = dir === 'left'
   const bob = frame === 0 ? 0 : -1
   const P = (x: number, y: number, w: number, h: number, c: string) => {
@@ -110,15 +136,15 @@ export function drawCharacter(ctx: Ctx, ox: number, oy: number, dir: Dir, frame:
     P(2, 11 + bob, 8, 1, HOODIE_DARK)
     P(1, 8 + bob + (frame === 2 ? 1 : 0), 1, 3, HOODIE_DARK)
     P(10, 8 + bob + (frame === 1 ? 1 : 0), 1, 3, HOODIE_DARK)
-    P(1, 11 + bob + (frame === 2 ? 1 : 0), 1, 1, SKIN)
-    P(10, 11 + bob + (frame === 1 ? 1 : 0), 1, 1, SKIN)
+    P(1, 11 + bob + (frame === 2 ? 1 : 0), 1, 1, SKIN_C)
+    P(10, 11 + bob + (frame === 1 ? 1 : 0), 1, 1, SKIN_C)
 
     if (dir === 'down') {
       P(5, 8 + bob, 1, 2, STRING)
       P(6, 8 + bob, 1, 2, STRING)
       P(3, 0 + bob, 6, 1, HAIR)
       P(2, 1 + bob, 8, 3, HAIR)
-      P(3, 4 + bob, 6, 3, SKIN)
+      P(3, 4 + bob, 6, 3, SKIN_C)
       P(2, 4 + bob, 1, 2, HAIR)
       P(9, 4 + bob, 1, 2, HAIR)
       P(4, 4 + bob, 2, 1, HAIR)
@@ -138,7 +164,7 @@ export function drawCharacter(ctx: Ctx, ox: number, oy: number, dir: Dir, frame:
       P(3, 7 + bob, 6, 2, HOODIE_DARK)
       P(3, 0 + bob, 6, 1, HAIR)
       P(2, 1 + bob, 8, 6, HAIR)
-      P(3, 6 + bob, 6, 1, SKIN)
+      P(3, 6 + bob, 6, 1, SKIN_C)
       if (look.longHair) P(2, 6 + bob, 8, 4, HAIR)
       if (look.bow) P(4, 0 + bob, 4, 2, look.bow)
     }
@@ -168,11 +194,11 @@ export function drawCharacter(ctx: Ctx, ox: number, oy: number, dir: Dir, frame:
   P(3, 11 + bob, 6, 1, HOODIE_DARK)
   const armX = frame === 1 ? 6 : frame === 2 ? 4 : 5
   P(armX, 8 + bob, 2, 3, HOODIE_DARK)
-  P(armX, 11 + bob, 2, 1, SKIN)
+  P(armX, 11 + bob, 2, 1, SKIN_C)
 
   P(3, 0 + bob, 6, 1, HAIR)
   P(2, 1 + bob, 8, 3, HAIR)
-  P(4, 4 + bob, 5, 3, SKIN)
+  P(4, 4 + bob, 5, 3, SKIN_C)
   P(2, 4 + bob, 3, 2, HAIR)
   P(8, 4 + bob, 1, 1, HAIR)
   P(7, 5 + bob, 1, 1, HAIR)
@@ -188,9 +214,34 @@ export function drawCharacter(ctx: Ctx, ox: number, oy: number, dir: Dir, frame:
 function drawGrassTile(ctx: Ctx, c: number, r0: number) {
   const x = c * TILE
   const y = r0 * TILE
-  r(ctx, x, y, TILE, TILE, (c + r0) % 2 === 0 ? pal.grassA : pal.grassB)
   const h = hash(c, r0)
   const h2 = hash(r0 + 31, c + 7)
+
+  if (realm === 'nether') {
+    r(ctx, x, y, TILE, TILE, (c + r0) % 2 === 0 ? '#1b1116' : '#160d12')
+    r(ctx, x + Math.floor(h * 11) + 1, y + Math.floor(h2 * 11) + 2, 3, 2, '#2c1820')
+    if (h > 0.78) r(ctx, x + Math.floor(h2 * 10) + 2, y + Math.floor(h * 10) + 2, 2, 2, '#4a1d24')
+    if (h > 0.91) r(ctx, x + 6, y + 6, 2, 1, '#ff6b2b')
+    return
+  }
+
+  if (realm === 'indian') {
+    r(ctx, x, y, TILE, TILE, (c + r0) % 2 === 0 ? '#c8d68b' : '#bfd080')
+    r(ctx, x + Math.floor(h * 12) + 1, y + Math.floor(h2 * 12) + 2, 1, 2, '#9eb560')
+    r(ctx, x + Math.floor(h2 * 10) + 3, y + Math.floor(h * 10) + 4, 1, 1, '#e4ebad')
+    if (h > 0.8) {
+      // Marigold flowers
+      const fc = h2 > 0.5 ? '#ff9f1c' : '#ffbf00'
+      const fx = x + 4 + Math.floor(h2 * 7)
+      const fy = y + 4 + Math.floor(h * 6)
+      r(ctx, fx - 1, fy, 3, 1, fc)
+      r(ctx, fx, fy - 1, 1, 3, fc)
+      r(ctx, fx, fy, 1, 1, '#d95d39')
+    }
+    return
+  }
+
+  r(ctx, x, y, TILE, TILE, (c + r0) % 2 === 0 ? pal.grassA : pal.grassB)
   r(ctx, x + Math.floor(h * 12) + 1, y + Math.floor(h2 * 12) + 2, 1, 2, pal.grassDark)
   r(ctx, x + Math.floor(h * 12) + 2, y + Math.floor(h2 * 12) + 1, 1, 3, pal.grassDark)
   r(ctx, x + Math.floor(h2 * 10) + 3, y + Math.floor(h * 10) + 4, 1, 1, pal.grassLight)
@@ -212,7 +263,12 @@ function drawGrassTile(ctx: Ctx, c: number, r0: number) {
 function drawPathTile(ctx: Ctx, c: number, r0: number) {
   const x = c * TILE
   const y = r0 * TILE
-  r(ctx, x, y, TILE, TILE, C.path)
+  const base = realm === 'nether' ? '#241e26' : realm === 'indian' ? '#e6ba8a' : C.path
+  const stone = realm === 'nether' ? '#322a36' : realm === 'indian' ? '#d9a46c' : C.pathStone
+  const light = realm === 'nether' ? '#453b4a' : realm === 'indian' ? '#f5d5ac' : C.pathLight
+  const edge = realm === 'nether' ? '#140f17' : realm === 'indian' ? '#b87d4b' : C.pathEdge
+
+  r(ctx, x, y, TILE, TILE, base)
   const h = hash(c + 5, r0 + 9)
   const stones = [
     [1, 1, 6, 4],
@@ -222,14 +278,14 @@ function drawPathTile(ctx: Ctx, c: number, r0: number) {
   ]
   stones.forEach(([sx, sy, sw, sh], i) => {
     const ox = Math.floor(hash(c + i, r0) * 2)
-    r(ctx, x + sx + ox, y + sy, sw, sh, C.pathStone)
-    r(ctx, x + sx + ox, y + sy, sw, 1, C.pathLight)
+    r(ctx, x + sx + ox, y + sy, sw, sh, stone)
+    r(ctx, x + sx + ox, y + sy, sw, 1, light)
   })
-  if (h > 0.7) r(ctx, x + 7, y + 7, 2, 1, C.pathEdge)
-  if (!isPath(c, r0 - 1) && !isRiver(c)) r(ctx, x, y, TILE, 1, C.pathEdge)
-  if (!isPath(c, r0 + 1) && !isRiver(c)) r(ctx, x, y + 15, TILE, 1, C.pathEdge)
-  if (!isPath(c - 1, r0) && !isRiver(c - 1)) r(ctx, x, y, 1, TILE, C.pathEdge)
-  if (!isPath(c + 1, r0) && !isRiver(c + 1)) r(ctx, x + 15, y, 1, TILE, C.pathEdge)
+  if (h > 0.7) r(ctx, x + 7, y + 7, 2, 1, edge)
+  if (!isPath(c, r0 - 1) && !isRiver(c)) r(ctx, x, y, TILE, 1, edge)
+  if (!isPath(c, r0 + 1) && !isRiver(c)) r(ctx, x, y + 15, TILE, 1, edge)
+  if (!isPath(c - 1, r0) && !isRiver(c - 1)) r(ctx, x, y, 1, TILE, edge)
+  if (!isPath(c + 1, r0) && !isRiver(c + 1)) r(ctx, x + 15, y, 1, TILE, edge)
 }
 
 function drawRoof(ctx: Ctx, bx: number, by: number, base: string, dark: string, light: string) {
@@ -247,6 +303,13 @@ function drawRoof(ctx: Ctx, bx: number, by: number, base: string, dark: string, 
 
 function drawWindow(ctx: Ctx, x: number, y: number, frame: string, curtain: string) {
   r(ctx, x - 1, y - 1, 14, 12, frame)
+  if (realm === 'nether') {
+    r(ctx, x, y, 12, 10, '#ff7b29')
+    r(ctx, x + 2, y + 2, 8, 6, '#ffd47a')
+    r(ctx, x + 5, y, 2, 10, frame)
+    r(ctx, x, y + 4, 12, 2, frame)
+    return
+  }
   r(ctx, x, y, 12, 10, '#bfe3f2')
   r(ctx, x, y, 12, 3, '#e6f6fb')
   r(ctx, x + 5, y, 2, 10, frame)
@@ -285,6 +348,61 @@ function drawEmblem(ctx: Ctx, style: BuildingStyle, cx: number, cy: number) {
   }
 }
 
+function drawNetherFortress(ctx: Ctx, b: BuildingLayout) {
+  const bx = b.x * TILE
+  const by = b.y * TILE
+  // Dark blackstone fortress walls
+  r(ctx, bx + 4, by + 20, 72, 44, '#1e1721')
+  for (let y = by + 24; y < by + 62; y += 6) r(ctx, bx + 4, y, 72, 1, '#120d14')
+  r(ctx, bx + 2, by + 16, 10, 48, '#2d2233')
+  r(ctx, bx + 68, by + 16, 10, 48, '#2d2233')
+  // Battlements & crimson nether-brick roof
+  r(ctx, bx + 0, by + 12, 80, 10, '#3a1a22')
+  for (let x = bx + 2; x < bx + 78; x += 10) {
+    r(ctx, x, by + 6, 6, 6, '#2d2233')
+    r(ctx, x + 1, by + 6, 4, 1, '#52405c')
+  }
+  r(ctx, bx + 16, by + 2, 48, 12, '#4d1b24')
+  r(ctx, bx + 16, by + 2, 48, 2, '#6b2733')
+  drawEmblem(ctx, b.style, bx + 40, by + 8)
+  drawWindow(ctx, bx + 12, by + 34, '#0f0a12', '#ff7b29')
+  drawWindow(ctx, bx + 56, by + 34, '#0f0a12', '#ff7b29')
+}
+
+function drawIndianHaveli(ctx: Ctx, b: BuildingLayout) {
+  const bx = b.x * TILE
+  const by = b.y * TILE
+  const wall = b.style === 'house' ? '#f5d6a7' : b.style === 'guild' ? '#f2b880' : b.style === 'dojo' ? '#f7e1c1' : '#e8c39e'
+  const trim = b.style === 'house' ? '#c85a32' : b.style === 'guild' ? '#9e3a2e' : b.style === 'dojo' ? '#d97b29' : '#b84a39'
+  const dome = b.style === 'dojo' ? '#e88d38' : '#d95d39'
+  const domeLight = '#ffd166'
+
+  // Haveli sandstone walls
+  r(ctx, bx + 4, by + 24, 72, 40, wall)
+  r(ctx, bx + 4, by + 24, 72, 3, trim)
+  r(ctx, bx + 4, by + 24, 4, 40, '#d9a46c')
+  r(ctx, bx + 72, by + 24, 4, 40, '#d9a46c')
+  // Decorative parapet & central chhatri dome
+  r(ctx, bx + 2, by + 18, 76, 6, trim)
+  for (let x = bx + 4; x < bx + 76; x += 6) r(ctx, x, by + 16, 3, 2, domeLight)
+  // Center dome
+  r(ctx, bx + 26, by + 6, 28, 12, dome)
+  r(ctx, bx + 30, by + 2, 20, 4, dome)
+  r(ctx, bx + 36, by - 2, 8, 4, domeLight)
+  r(ctx, bx + 39, by - 6, 2, 4, domeLight)
+  // Side mini-domes
+  for (const dx of [8, 62]) {
+    r(ctx, bx + dx, by + 10, 10, 8, dome)
+    r(ctx, bx + dx + 3, by + 7, 4, 3, domeLight)
+  }
+  // Marigold toran garland above door
+  for (let x = bx + 26; x <= bx + 52; x += 4) {
+    r(ctx, x, by + 38, 3, 2, x % 8 === 0 ? '#ff9f1c' : '#ffbf00')
+  }
+  drawWindow(ctx, bx + 11, by + 34, trim, '#ff9f1c')
+  drawWindow(ctx, bx + 57, by + 34, trim, '#ff9f1c')
+}
+
 function drawHouse(ctx: Ctx, b: BuildingLayout) {
   const bx = b.x * TILE
   const by = b.y * TILE
@@ -311,7 +429,6 @@ function drawGuild(ctx: Ctx, b: BuildingLayout) {
   r(ctx, bx + 73, by + 26, 3, 38, '#8a5f3c')
   drawRoof(ctx, bx, by, '#a995d6', '#8670bd', '#c9b8ee')
   drawEmblem(ctx, 'guild', bx + 40, by + 10)
-  // quest board
   r(ctx, bx + 9, by + 32, 18, 16, '#8a5f3c')
   r(ctx, bx + 10, by + 33, 16, 14, '#e9cf9e')
   r(ctx, bx + 12, by + 35, 5, 4, '#fff6e0')
@@ -319,7 +436,6 @@ function drawGuild(ctx: Ctx, b: BuildingLayout) {
   r(ctx, bx + 13, by + 41, 6, 4, '#c9b8ee')
   r(ctx, bx + 20, by + 42, 4, 3, '#fff6e0')
   drawWindow(ctx, bx + 57, by + 34, '#8a5f3c', '#f7b89b')
-  // banners
   r(ctx, bx + 30, by + 28, 3, 10, '#e0876a')
   r(ctx, bx + 47, by + 28, 3, 10, '#e0876a')
   r(ctx, bx + 30, by + 38, 1, 1, '#e0876a')
@@ -332,14 +448,12 @@ function drawDojo(ctx: Ctx, b: BuildingLayout) {
   r(ctx, bx + 4, by + 26, 72, 38, '#f4ecd8')
   for (const px of [4, 22, 54, 72]) r(ctx, bx + px, by + 26, 4, 38, '#5b4636')
   r(ctx, bx + 4, by + 40, 72, 2, '#5b4636')
-  // shoji windows
   for (const wx of [9, 59]) {
     r(ctx, bx + wx, by + 30, 12, 9, '#fffaf0')
     r(ctx, bx + wx + 4, by + 30, 1, 9, '#c9bba0')
     r(ctx, bx + wx + 8, by + 30, 1, 9, '#c9bba0')
     r(ctx, bx + wx, by + 34, 12, 1, '#c9bba0')
   }
-  // roof - two tiered with upturned eaves
   const roof = '#5f7f8a'
   const roofDark = '#46626c'
   const roofLight = '#86a5ae'
@@ -359,7 +473,6 @@ function drawDojo(ctx: Ctx, b: BuildingLayout) {
   r(ctx, bx - 4, by + 24, 88, 3, roofDark)
   r(ctx, bx - 7, by + 20, 4, 4, roofDark)
   r(ctx, bx + 83, by + 20, 4, 4, roofDark)
-  // lanterns beside door
   for (const lx of [27, 49]) {
     r(ctx, bx + lx, by + 43, 1, 2, C.ink)
     r(ctx, bx + lx - 2, by + 45, 5, 7, '#e86a5c')
@@ -399,15 +512,20 @@ function drawBuilding(ctx: Ctx, b: BuildingLayout) {
   const bx = b.x * TILE
   const by = b.y * TILE
   r(ctx, bx + 2, by + 62, 76, 3, 'rgba(59,42,63,0.18)')
-  if (b.style === 'house') drawHouse(ctx, b)
-  if (b.style === 'guild') drawGuild(ctx, b)
-  if (b.style === 'dojo') drawDojo(ctx, b)
-  if (b.style === 'post') drawPost(ctx, b)
-  r(ctx, bx + 4, by + 60, 72, 4, '#b8a998')
-  r(ctx, bx + 4, by + 60, 72, 1, '#d6cabb')
-  // step + welcome mat
-  r(ctx, bx + 31, by + 64, 18, 2, '#b8a998')
-  r(ctx, bx + 33, by + 67, 14, 6, MAT_COLORS[b.style])
+  if (realm === 'nether') {
+    drawNetherFortress(ctx, b)
+  } else if (realm === 'indian') {
+    drawIndianHaveli(ctx, b)
+  } else {
+    if (b.style === 'house') drawHouse(ctx, b)
+    if (b.style === 'guild') drawGuild(ctx, b)
+    if (b.style === 'dojo') drawDojo(ctx, b)
+    if (b.style === 'post') drawPost(ctx, b)
+  }
+  r(ctx, bx + 4, by + 60, 72, 4, realm === 'nether' ? '#2d2233' : '#b8a998')
+  r(ctx, bx + 4, by + 60, 72, 1, realm === 'nether' ? '#4a3854' : '#d6cabb')
+  r(ctx, bx + 31, by + 64, 18, 2, realm === 'nether' ? '#2d2233' : '#b8a998')
+  r(ctx, bx + 33, by + 67, 14, 6, realm === 'nether' ? '#7a1f2b' : MAT_COLORS[b.style])
   r(ctx, bx + 34, by + 68, 12, 1, 'rgba(255,255,255,0.35)')
   r(ctx, bx + 34, by + 71, 12, 1, 'rgba(0,0,0,0.12)')
 }
@@ -421,13 +539,13 @@ export function renderBackground(ctx: Ctx) {
       else drawGrassTile(ctx, col, row)
     }
   }
-  // river banks
   const left = RIVER_COLS[0] * TILE
   const right = (RIVER_COLS[RIVER_COLS.length - 1] + 1) * TILE
+  const bankColor = realm === 'nether' ? '#2b1822' : realm === 'indian' ? '#c89b6e' : C.bank
   for (let y = 0; y < HEIGHT; y += 4) {
     const wob = hash(y, 3) > 0.5 ? 1 : 0
-    r(ctx, left - 2 - wob, y, 2 + wob, 4, C.bank)
-    r(ctx, right, y, 2 + (1 - wob), 4, C.bank)
+    r(ctx, left - 2 - wob, y, 2 + wob, 4, bankColor)
+    r(ctx, right, y, 2 + (1 - wob), 4, bankColor)
   }
   for (const b of BUILDINGS) drawBuilding(ctx, b)
 }
@@ -439,39 +557,47 @@ export function renderBackground(ctx: Ctx) {
 export function drawWater(ctx: Ctx, t: number) {
   const left = RIVER_COLS[0] * TILE
   const w = RIVER_COLS.length * TILE
-  r(ctx, left, 0, w, HEIGHT, C.water)
+  const base = realm === 'nether' ? '#d94814' : realm === 'indian' ? '#6eb8d6' : C.water
+  const dark = realm === 'nether' ? '#a62c0b' : realm === 'indian' ? '#529ab8' : C.waterDark
+  const light = realm === 'nether' ? '#ffd166' : C.waterLight
+
+  r(ctx, left, 0, w, HEIGHT, base)
   for (let i = 0; i < 26; i++) {
     const x = left + 2 + Math.floor(hash(i, 11) * (w - 8))
-    const y = (Math.floor(hash(i, 5) * HEIGHT) + t * 18) % HEIGHT
-    r(ctx, x, y, 4, 1, C.waterDark)
-    r(ctx, x + 1, y + 1, 3, 1, C.waterDark)
+    const y = (Math.floor(hash(i, 5) * HEIGHT) + t * (realm === 'nether' ? 10 : 18)) % HEIGHT
+    r(ctx, x, y, 4, 1, dark)
+    r(ctx, x + 1, y + 1, 3, 1, dark)
   }
   for (let i = 0; i < 14; i++) {
     const x = left + 3 + Math.floor(hash(i, 23) * (w - 8))
-    const y = (Math.floor(hash(i, 17) * HEIGHT) + t * 26) % HEIGHT
+    const y = (Math.floor(hash(i, 17) * HEIGHT) + t * (realm === 'nether' ? 14 : 26)) % HEIGHT
     const twinkle = Math.sin(t * 4 + i) > 0 ? 3 : 2
-    r(ctx, x, y, twinkle, 1, C.waterLight)
+    r(ctx, x, y, twinkle, 1, light)
   }
-  r(ctx, left, 0, 1, HEIGHT, C.waterDark)
-  r(ctx, left + w - 1, 0, 1, HEIGHT, C.waterDark)
+  r(ctx, left, 0, 1, HEIGHT, dark)
+  r(ctx, left + w - 1, 0, 1, HEIGHT, dark)
 }
 
 export function drawBridges(ctx: Ctx) {
   const left = RIVER_COLS[0] * TILE - 5
   const w = RIVER_COLS.length * TILE + 10
+  const wood = realm === 'nether' ? '#2c2430' : realm === 'indian' ? '#d9a46c' : C.wood
+  const dark = realm === 'nether' ? '#17121a' : realm === 'indian' ? '#9e5d32' : C.woodDark
+  const light = realm === 'nether' ? '#4a3d52' : realm === 'indian' ? '#f5d5ac' : C.woodLight
+
   for (const row of BRIDGE_ROWS) {
     const y = row * TILE
-    r(ctx, left, y + 1, w, 15, C.wood)
+    r(ctx, left, y + 1, w, 15, wood)
     for (let x = left; x < left + w; x += 4) {
-      r(ctx, x, y + 1, 1, 15, C.woodDark)
-      r(ctx, x + 1, y + 2, 1, 1, C.woodLight)
+      r(ctx, x, y + 1, 1, 15, dark)
+      r(ctx, x + 1, y + 2, 1, 1, light)
     }
-    r(ctx, left, y - 2, w, 3, C.woodDark)
-    r(ctx, left, y + 14, w, 3, C.woodDark)
-    r(ctx, left, y - 2, w, 1, C.woodLight)
+    r(ctx, left, y - 2, w, 3, dark)
+    r(ctx, left, y + 14, w, 3, dark)
+    r(ctx, left, y - 2, w, 1, light)
     for (const px of [left, left + w - 3, left + Math.floor(w / 2) - 1]) {
-      r(ctx, px, y - 5, 3, 6, C.woodDark)
-      r(ctx, px, y + 12, 3, 6, C.woodDark)
+      r(ctx, px, y - 5, 3, 6, dark)
+      r(ctx, px, y + 12, 3, 6, dark)
     }
   }
 }
@@ -483,7 +609,7 @@ export function doorRect(b: BuildingLayout) {
 export function drawDoor(ctx: Ctx, b: BuildingLayout, progress: number, t: number) {
   const d = doorRect(b)
   r(ctx, d.x - 2, d.y - 2, d.w + 4, d.h + 2, C.ink)
-  if (b.style === 'dojo') r(ctx, d.x - 3, d.y - 3, d.w + 6, 2, '#5b4636')
+  if (b.style === 'dojo' && realm === 'overworld') r(ctx, d.x - 3, d.y - 3, d.w + 6, 2, '#5b4636')
   if (progress > 0) {
     const flicker = 0.85 + Math.sin(t * 9) * 0.05
     r(ctx, d.x, d.y, d.w, d.h, '#ffbf5e')
@@ -494,9 +620,9 @@ export function drawDoor(ctx: Ctx, b: BuildingLayout, progress: number, t: numbe
   }
   const panelW = Math.round(d.w * (1 - progress))
   if (panelW > 0) {
-    const isDojo = b.style === 'dojo'
-    const base = isDojo ? '#efe4c8' : '#a0663e'
-    const dark = isDojo ? '#5b4636' : '#7a4a2a'
+    const isDojo = b.style === 'dojo' && realm === 'overworld'
+    const base = realm === 'nether' ? '#3a1a22' : realm === 'indian' ? '#8c4220' : isDojo ? '#efe4c8' : '#a0663e'
+    const dark = realm === 'nether' ? '#1f0c11' : realm === 'indian' ? '#5e2912' : isDojo ? '#5b4636' : '#7a4a2a'
     r(ctx, d.x, d.y, panelW, d.h, base)
     if (isDojo) {
       for (let y = d.y + 4; y < d.y + d.h; y += 5) r(ctx, d.x, y, panelW, 1, dark)
@@ -522,12 +648,19 @@ export function drawTree(ctx: Ctx, col: number, row: number, t: number) {
   const base = row * TILE + 15
   const sway = Math.round(Math.sin(t * 1.3 + col) * 0.8)
   r(ctx, cx - 9, base - 1, 18, 3, 'rgba(59,42,63,0.18)')
-  r(ctx, cx - 2, base - 12, 4, 12, '#7a5236')
-  r(ctx, cx - 2, base - 12, 1, 12, '#93663f')
-  r(ctx, cx + 2, base - 8, 3, 2, '#7a5236')
+  const trunk = realm === 'nether' ? '#3a222e' : '#7a5236'
+  const trunkLight = realm === 'nether' ? '#573345' : '#93663f'
+  r(ctx, cx - 2, base - 12, 4, 12, trunk)
+  r(ctx, cx - 2, base - 12, 1, 12, trunkLight)
+  r(ctx, cx + 2, base - 8, 3, 2, trunk)
   const ox = cx + sway
   const oy = base - 30
-  const [dark, mid, light] = pal.tree
+  const [dark, mid, light]: [string, string, string] =
+    realm === 'nether'
+      ? ['#5c121e', '#8c1d2e', '#c93445']
+      : realm === 'indian'
+        ? ['#3d7a47', '#5aa154', '#86c46c']
+        : pal.tree
   const blobs: [number, number, number, number, string][] = [
     [-12, 6, 24, 12, dark],
     [-10, 2, 20, 18, dark],
@@ -539,24 +672,27 @@ export function drawTree(ctx: Ctx, col: number, row: number, t: number) {
     [-9, 10, 5, 3, light],
   ]
   for (const [x, y, w, h, c] of blobs) r(ctx, ox + x, oy + y, w, h, c)
-  r(ctx, ox - 4, oy + 3, 1, 1, '#ffffff')
-  r(ctx, ox + 5, oy + 8, 1, 1, '#ffffff')
-  r(ctx, ox - 7, oy + 12, 1, 1, '#ffffff')
+  const accent = realm === 'nether' ? '#ff9e44' : realm === 'indian' ? '#ffbf00' : '#ffffff'
+  r(ctx, ox - 4, oy + 3, 1, 1, accent)
+  r(ctx, ox + 5, oy + 8, 1, 1, accent)
+  r(ctx, ox - 7, oy + 12, 1, 1, accent)
 }
 
 export function drawLantern(ctx: Ctx, col: number, row: number, t: number) {
   const x = col * TILE + 4
   const y = row * TILE
   r(ctx, x - 1, y + 14, 10, 2, 'rgba(59,42,63,0.18)')
-  r(ctx, x + 2, y + 9, 4, 6, C.stoneDark)
-  r(ctx, x, y + 13, 8, 2, C.stone)
-  r(ctx, x + 1, y + 4, 6, 5, C.stone)
+  const stDark = realm === 'nether' ? '#1c1520' : C.stoneDark
+  const st = realm === 'nether' ? '#2d2233' : C.stone
+  r(ctx, x + 2, y + 9, 4, 6, stDark)
+  r(ctx, x, y + 13, 8, 2, st)
+  r(ctx, x + 1, y + 4, 6, 5, st)
   const glow = 0.75 + Math.sin(t * 3 + col) * 0.2
   ctx.globalAlpha = glow
-  r(ctx, x + 2, y + 5, 4, 3, C.glow)
+  r(ctx, x + 2, y + 5, 4, 3, realm === 'nether' ? '#5ce1e6' : C.glow)
   ctx.globalAlpha = 1
-  r(ctx, x - 1, y + 2, 10, 2, C.stoneDark)
-  r(ctx, x + 2, y, 4, 2, C.stoneDark)
+  r(ctx, x - 1, y + 2, 10, 2, stDark)
+  r(ctx, x + 2, y, 4, 2, stDark)
 }
 
 export function drawNotice(ctx: Ctx, col: number, row: number) {

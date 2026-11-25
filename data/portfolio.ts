@@ -243,7 +243,7 @@ export const wizardLines = {
   season: (label: string) => `Tempus mutatio! ${label} has arrived in Dev Village.`,
 }
 
-export type ZoneKey = 'intro' | 'village' | 'river' | 'bridge' | 'sakura' | 'notice' | BuildingId | NpcId
+export type ZoneKey = 'intro' | 'village' | 'river' | 'bridge' | 'bridgeLove' | 'sakura' | 'notice' | BuildingId | NpcId
 
 const npcZones = Object.fromEntries(
   Object.entries(npcs).map(([id, n]) => [id, { speaker: n.name.toUpperCase(), text: n.nearby }]),
@@ -264,4 +264,27 @@ export const dialogue: Record<ZoneKey, { speaker: string; text: string }> = {
   projects: { speaker: 'GUILD HALL', text: 'The quest board is full of completed adventures. Step inside to browse projects. (Press A)' },
   roadmap: { speaker: 'THE DOJO', text: 'Eight semesters of training lead to the final boss. Enter to view the skill tree. (Press A)' },
   contact: { speaker: 'POST OFFICE', text: 'Want to send Kartik a message? The ravens are ready. (Press A)' },
+  bridgeLove: { speaker: 'KARTIK', text: 'They are in love... Better to move sideways...' },
+}
+
+export const dialogueHindi: Record<ZoneKey, { speaker: string; text: string }> = {
+  mahi: { speaker: 'माही', text: 'माही खुले आसमान के नीचे कोड डिबग कर रहा है। बात करने के लिए A दबाएं!' },
+  rishi: { speaker: 'ऋषि', text: 'ऋषि गिल्ड बोर्ड पर नया क्वेस्ट लगा रहा है। बात करने के लिए A दबाएं।' },
+  raunak: { speaker: 'रौनक', text: 'रौनक डाकघर के पास से हाथ हिला रहा है। बात करने के लिए A दबाएं।' },
+  sam: { speaker: 'सैम', text: 'सैम दोजो के पास ठंडी हवा का आनंद ले रही है। बात करने के लिए A दबाएं।' },
+  wizard: { speaker: 'जादूगर क्रोनोस', text: 'एक बूढ़ा जादूगर चमकती छड़ी के साथ समय और मौसम बदल सकता है। A दबाएं।' },
+  dragon: { speaker: 'बाइट', text: 'एक नन्हा ड्रैगन आसमान में उड़ रहा है और आग उगल रहा है। A दबाएं।' },
+  slime: { speaker: 'ग्लूप', text: 'एक प्यारा स्लाइम रास्ते पर उछल रहा है। बात करने के लिए A दबाएं।' },
+  fish: { speaker: 'कोई-चान', text: 'नदी में एक चमकदार मछली तैर रही है। बात करने के लिए A दबाएं।' },
+  intro: { speaker: 'मार्गदर्शक', text: 'देव गाँव में आपका स्वागत है! चलने के लिए क्लिक करें, WASD इस्तेमाल करें, या दरवाज़ा खोलने के लिए A दबाएं।' },
+  village: { speaker: 'कार्तिक', text: 'भारतीय नगर बहुत सुंदर है! चार हवेलियाँ, चार कहानियाँ। कौन सा द्वार खोलें?' },
+  river: { speaker: 'कार्तिक', text: 'नदी की कल-कल आवाज़ मन को शांत कर रही है... उस पार जाने के लिए पुल पार करें।' },
+  bridge: { speaker: 'कार्तिक', text: 'इस पुल ने मेरे कोड से ज़्यादा मर्ज देखे हैं!' },
+  bridgeLove: { speaker: 'KARTIK', text: 'They are in love... Better to move sideways...' },
+  sakura: { speaker: 'कार्तिक', text: 'पेड़ों की छाँव और गेंदे के फूल... सफ़र जारी है!' },
+  notice: { speaker: 'सूचना पट्ट', text: 'HOME: परिचय। GUILD: प्रोजेक्ट्स। DOJO: रोडमैप। POST: संपर्क। Fast Travel का उपयोग करें!' },
+  home: { speaker: 'कार्तिक की हवेली', text: 'मेरा घर। मेरा परिचय और स्टैट्स देखने के लिए अंदर आएं। (A दबाएं)' },
+  projects: { speaker: 'प्रोजेक्ट सभा', text: 'क्वेस्ट बोर्ड पूरे किए गए प्रोजेक्ट्स से भरा है। देखने के लिए अंदर आएं। (A दबाएं)' },
+  roadmap: { speaker: 'अखाड़ा (दोजो)', text: 'आठ सेमेस्टर की साधना का स्किल ट्री देखने के लिए अंदर आएं। (A दबाएं)' },
+  contact: { speaker: 'डाकघर', text: 'कार्तिक को संदेश भेजना चाहते हैं? कबूतर तैयार हैं। (A दबाएं)' },
 }
