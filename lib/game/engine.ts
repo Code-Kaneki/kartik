@@ -19,11 +19,14 @@ import {
   type Dir,
 } from './draw'
 import {
+  BRIDGE_ROWS,
   BUILDINGS,
+  COLS,
   HEIGHT,
   NPC_SPOTS,
   PROPS,
   RIVER_COLS,
+  ROWS,
   SLIME_RANGE,
   SPAWN,
   TILE,
@@ -42,10 +45,34 @@ import { DAY_LENGTH, SEASONS, SEASON_ORDER, darknessAt, duskAt, type SeasonId } 
 
 type Phase = 'free' | 'opening' | 'stepIn' | 'irisOut' | 'inside' | 'irisIn' | 'stepOut' | 'closing' | 'talking'
 
-type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; isFire?: boolean }
+type Particle = {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  max: number
+  color: string
+  size: number
+  isFire?: boolean
+  kind?: 'pixel' | 'heart'
+}
 type Weather = { x: number; y: number; vx: number; vy: number; phase: number; sway: number; color: string; w: number; h: number }
 type Ripple = { x: number; y: number; t: number }
 type Light = { x: number; y: number; r: number }
+type BurnSpot = { x: number; y: number; life: number; max: number; r: number; kind: 'grass' | 'prop' | 'building' }
+
+type FriendState = {
+  x: number
+  y: number
+  dir: Dir
+  targetX: number | null
+  targetY: number | null
+  waitT: number
+  animT: number
+  frameIdx: number
+  burnT: number
+}
 
 export type WorldState = { season: SeasonId; night: boolean }
 
@@ -57,6 +84,8 @@ export type EngineCallbacks = {
 }
 
 const SPEED = 62
+const NPC_SPEED = 24
+const WIZARD_PANIC_SPEED = 78
 const WALK_FRAMES = [0, 1, 0, 2]
 const DIR_VECTORS: Record<Dir, [number, number]> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
 const FRIEND_IDS: FriendId[] = ['mahi', 'rishi', 'raunak', 'sam']
@@ -104,6 +133,7 @@ export class GameEngine {
   private doors: Record<BuildingId, number> = { home: 0, projects: 0, roadmap: 0, contact: 0 }
 
   private particles: Particle[] = []
+  private burns: BurnSpot[] = []
   private weather: Weather[] = []
   private ripples: Ripple[] = []
   private zone: ZoneKey = 'intro'
@@ -111,12 +141,60 @@ export class GameEngine {
 
   private talkId: NpcId | null = null
   private friends = Object.fromEntries(
-    FRIEND_IDS.map((id) => [id, { ...tileCenter(NPC_SPOTS[id].col, NPC_SPOTS[id].row), dir: 'down' as Dir }]),
-  ) as Record<FriendId, { x: number; y: number; dir: Dir }>
-  private wizard = { ...tileCenter(NPC_SPOTS.wizard.col, NPC_SPOTS.wizard.row), faceLeft: true }
-  private dragon = { ...tileCenter(NPC_SPOTS.dragon.col, NPC_SPOTS.dragon.row), faceLeft: false, fireT: 0, nextFire: 4, flyT: 0, boltT: 0, boltX: 160, boltY: 90, nextBolt: 6 }
-  private slime = { x: SLIME_RANGE.minCol * TILE + 8, dir: 1, hopT: 0, hop: 0, boostT: 0 }
+    FRIEND_IDS.map((id, idx) => {
+      const c = tileCenter(NPC_SPOTS[id].col, NPC_SPOTS[id].row)
+      return [
+        id,
+        {
+          x: c.x,
+          y: c.y,
+          dir: 'down' as Dir,
+          targetX: null,
+          targetY: null,
+          waitT: 2 + idx * 1.3,
+          animT: 0,
+          frameIdx: 0,
+          burnT: 0,
+        },
+      ]
+    }),
+  ) as Record<FriendId, FriendState>
+
+  private wizard = {
+    ...tileCenter(NPC_SPOTS.wizard.col, NPC_SPOTS.wizard.row),
+    faceLeft: true,
+    targetX: null as number | null,
+    targetY: null as number | null,
+    waitT: 3.5,
+    burnT: 0,
+    panicDirT: 0,
+    panicVx: 0,
+    panicVy: 0,
+  }
+
+  private dragon = {
+    ...tileCenter(NPC_SPOTS.dragon.col, NPC_SPOTS.dragon.row),
+    faceLeft: false,
+    fireT: 0,
+    nextFire: 3.5,
+    flyT: 0,
+    boltT: 0,
+    boltX: 160,
+    boltY: 90,
+    nextBolt: 6,
+  }
+
+  private slime = { x: SLIME_RANGE.minCol * TILE + 8, dir: 1, hopT: 0, hop: 0, boostT: 0, burnT: 0 }
   private fish = { x: RIVER_X, y: 140, down: true, jump: -1, nextJump: 4 }
+
+  // Easter egg: Sam & Mahi meet on the bridge and pop hearts
+  private bridgeDate = {
+    state: 'idle' as 'idle' | 'walking' | 'sitting',
+    cooldown: 16,
+    sitT: 0,
+    heartT: 0,
+    row: BRIDGE_ROWS[0],
+  }
 
   private season: SeasonId = 'spring'
   private cycle = 0.05
@@ -184,8 +262,8 @@ export class GameEngine {
     playSfx('blip')
     const npc = NPC_IDS.find((id) => {
       const a = this.npcAnchor(id)
-      const halfW = id === 'dragon' ? 10 : 8
-      return Math.abs(wx - a.x) <= halfW && wy >= a.top - 3 && wy <= a.y + 8
+      const halfW = id === 'dragon' ? 12 : 9
+      return Math.abs(wx - a.x) <= halfW && wy >= a.top - 4 && wy <= a.y + 9
     })
     if (npc) {
       this.walkToNpc(npc)
@@ -273,7 +351,7 @@ export class GameEngine {
 
   npcAction(id: NpcId) {
     if (id === 'dragon') {
-      this.dragon.fireT = 1.3
+      this.dragon.fireT = 1.4
       playSfx('roar')
     } else if (id === 'slime') {
       this.slime.boostT = 1
@@ -309,7 +387,7 @@ export class GameEngine {
   }
 
   private talkRange(id: NpcId) {
-    return id === 'fish' ? 34 : 24
+    return id === 'fish' ? 34 : 26
   }
 
   private nearestNpc() {
@@ -329,7 +407,7 @@ export class GameEngine {
     const candidates: { col: number; row: number }[] = []
     if (id === 'fish') {
       candidates.push({ col: RIVER_COLS[0] - 1, row }, { col: RIVER_COLS[RIVER_COLS.length - 1] + 1, row })
-    } else if (id === 'slime') {
+    } else if (id === 'slime' || id === 'dragon') {
       candidates.push(nearestWalkable(col, row))
     } else {
       for (const [dx, dy] of [
@@ -337,9 +415,11 @@ export class GameEngine {
         [-1, 0],
         [1, 0],
         [0, -1],
+        [0, 0],
       ]) {
         if (!isBlocked(col + dx, row + dy)) candidates.push({ col: col + dx, row: row + dy })
       }
+      if (!candidates.length) candidates.push(nearestWalkable(col, row))
     }
     const start = this.playerTile()
     if (candidates.some((c) => c.col === start.col && c.row === start.row)) {
@@ -387,12 +467,258 @@ export class GameEngine {
     playSfx('splash')
   }
 
+  private isNpcWalkable(x: number, y: number) {
+    if (x < 10 || x > WIDTH - 10 || y < 10 || y > HEIGHT - 10) return false
+    const col = Math.floor(x / TILE)
+    const row = Math.floor(y / TILE)
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return false
+    if (isRiver(col) && !isBridge(col, row)) return false
+    for (const b of BUILDINGS) {
+      if (col >= b.x && col < b.x + b.w && row >= b.y && row < b.y + b.h) return false
+    }
+    for (const p of PROPS) {
+      if (p.col === col && p.row === row) return false
+    }
+    return true
+  }
+
+  private pickNearbyTarget(x: number, y: number, radiusTiles = 3) {
+    const baseCol = Math.floor(x / TILE)
+    const baseRow = Math.floor(y / TILE)
+    for (let tries = 0; tries < 10; tries++) {
+      const nc = Math.max(1, Math.min(COLS - 2, baseCol + Math.floor((Math.random() - 0.5) * radiusTiles * 2)))
+      const nr = Math.max(1, Math.min(ROWS - 2, baseRow + Math.floor((Math.random() - 0.5) * radiusTiles * 2)))
+      const c = tileCenter(nc, nr)
+      if (this.isNpcWalkable(c.x, c.y)) return c
+    }
+    return null
+  }
+
+  private addBurn(x: number, y: number, kind: BurnSpot['kind'], r = 7) {
+    if (this.burns.length >= 26) return
+    if (this.burns.some((b) => Math.hypot(b.x - x, b.y - y) < 10)) return
+    this.burns.push({ x, y, life: 0, max: 2.2 + Math.random() * 1.4, r, kind })
+  }
+
+  private spawnFlameOn(x: number, y: number) {
+    this.particles.push({
+      x: x + (Math.random() - 0.5) * 8,
+      y: y + (Math.random() - 0.5) * 4,
+      vx: (Math.random() - 0.5) * 10,
+      vy: -14 - Math.random() * 18,
+      life: 0,
+      max: 0.35 + Math.random() * 0.25,
+      color: ['#fff6d6', '#ffd47a', '#f39a5a', '#e0705f'][Math.floor(Math.random() * 4)],
+      size: Math.random() > 0.5 ? 2 : 3,
+    })
+  }
+
+  private updateBridgeDate(dt: number, paused: (id: NpcId) => boolean) {
+    const bd = this.bridgeDate
+    const sam = this.friends.sam
+    const mahi = this.friends.mahi
+    if (paused('sam') || paused('mahi')) return
+
+    if (bd.state === 'idle') {
+      bd.cooldown -= dt
+      if (bd.cooldown <= 0) {
+        bd.state = 'walking'
+        bd.row = BRIDGE_ROWS[Math.random() < 0.5 ? 0 : 1]
+        const y = bd.row * TILE + 8
+        mahi.targetX = RIVER_X - 7
+        mahi.targetY = y
+        sam.targetX = RIVER_X + 7
+        sam.targetY = y
+      }
+      return
+    }
+
+    if (bd.state === 'walking') {
+      const mahiArrived = mahi.targetX === null
+      const samArrived = sam.targetX === null
+      if (mahiArrived && samArrived) {
+        bd.state = 'sitting'
+        bd.sitT = 5.5
+        bd.heartT = 0.2
+        mahi.dir = 'right'
+        sam.dir = 'left'
+      }
+      return
+    }
+
+    if (bd.state === 'sitting') {
+      bd.sitT -= dt
+      bd.heartT -= dt
+      mahi.dir = 'right'
+      sam.dir = 'left'
+      if (bd.heartT <= 0) {
+        bd.heartT = 0.75
+        this.particles.push({
+          x: (mahi.x + sam.x) / 2 + (Math.random() - 0.5) * 8,
+          y: mahi.y - 12,
+          vx: (Math.random() - 0.5) * 8,
+          vy: -14,
+          life: 0,
+          max: 1.1,
+          color: '#f26a8d',
+          size: 3,
+          kind: 'heart',
+        })
+      }
+      if (bd.sitT <= 0) {
+        bd.state = 'idle'
+        bd.cooldown = 22 + Math.random() * 18
+        const mt = this.pickNearbyTarget(mahi.x - 40, mahi.y, 4)
+        const st = this.pickNearbyTarget(sam.x + 40, sam.y, 4)
+        if (mt) {
+          mahi.targetX = mt.x
+          mahi.targetY = mt.y
+        }
+        if (st) {
+          sam.targetX = st.x
+          sam.targetY = st.y
+        }
+      }
+    }
+  }
+
   private updateNpcs(dt: number) {
     const t = this.time
     const paused = (id: NpcId) => this.talkId === id || this.pendingNpc === id
 
+    // Sam & Mahi bridge date easter egg
+    this.updateBridgeDate(dt, paused)
+
+    // Friends random wandering & burn flames
+    for (const id of FRIEND_IDS) {
+      const f = this.friends[id]
+      if (f.burnT > 0) {
+        f.burnT = Math.max(0, f.burnT - dt)
+        if (Math.random() < dt * 14) this.spawnFlameOn(f.x, f.y - 4)
+      }
+      if (paused(id)) {
+        f.frameIdx = 0
+        continue
+      }
+      const inBridgeSit = this.bridgeDate.state === 'sitting' && (id === 'sam' || id === 'mahi')
+      if (inBridgeSit) {
+        f.frameIdx = 0
+        continue
+      }
+      if (f.targetX !== null && f.targetY !== null) {
+        const dx = f.targetX - f.x
+        const dy = f.targetY - f.y
+        const dist = Math.hypot(dx, dy)
+        const step = NPC_SPEED * dt
+        if (dist <= step) {
+          f.x = f.targetX
+          f.y = f.targetY
+          f.targetX = null
+          f.targetY = null
+          f.frameIdx = 0
+          f.waitT = 2.5 + Math.random() * 4.5
+        } else {
+          const nx = f.x + (dx / dist) * step
+          const ny = f.y + (dy / dist) * step
+          if (Math.abs(dx) > Math.abs(dy)) f.dir = dx > 0 ? 'right' : 'left'
+          else f.dir = dy > 0 ? 'down' : 'up'
+          const allowBridge = this.bridgeDate.state === 'walking' && (id === 'sam' || id === 'mahi')
+          if (allowBridge || this.isNpcWalkable(nx, ny)) {
+            f.x = nx
+            f.y = ny
+            f.animT += dt
+            if (f.animT > 0.18) {
+              f.animT = 0
+              f.frameIdx = (f.frameIdx + 1) % WALK_FRAMES.length
+            }
+          } else {
+            f.targetX = null
+            f.targetY = null
+            f.frameIdx = 0
+            f.waitT = 1.5 + Math.random() * 2.5
+          }
+        }
+      } else {
+        f.waitT -= dt
+        if (f.waitT <= 0) {
+          const next = this.pickNearbyTarget(f.x, f.y, 3)
+          if (next) {
+            f.targetX = next.x
+            f.targetY = next.y
+          } else {
+            f.waitT = 2
+          }
+        }
+      }
+    }
+
+    // Wizard: random wandering OR panic-running in every direction when on fire!
+    const w = this.wizard
+    if (w.burnT > 0) {
+      w.burnT = Math.max(0, w.burnT - dt)
+      if (Math.random() < dt * 20) this.spawnFlameOn(w.x, w.y - 8)
+      if (!paused('wizard')) {
+        w.panicDirT -= dt
+        if (w.panicDirT <= 0) {
+          w.panicDirT = 0.22 + Math.random() * 0.28
+          const a = Math.random() * Math.PI * 2
+          w.panicVx = Math.cos(a) * WIZARD_PANIC_SPEED
+          w.panicVy = Math.sin(a) * WIZARD_PANIC_SPEED
+          w.faceLeft = w.panicVx < 0
+        }
+        const nx = w.x + w.panicVx * dt
+        const ny = w.y + w.panicVy * dt
+        if (this.isNpcWalkable(nx, w.y)) w.x = nx
+        else w.panicVx *= -1
+        if (this.isNpcWalkable(w.x, ny)) w.y = ny
+        else w.panicVy *= -1
+        w.faceLeft = w.panicVx < 0
+      }
+    } else if (!paused('wizard')) {
+      if (w.targetX !== null && w.targetY !== null) {
+        const dx = w.targetX - w.x
+        const dy = w.targetY - w.y
+        const dist = Math.hypot(dx, dy)
+        const step = 18 * dt
+        if (dist <= step) {
+          w.x = w.targetX
+          w.y = w.targetY
+          w.targetX = null
+          w.targetY = null
+          w.waitT = 3 + Math.random() * 4
+        } else {
+          const nx = w.x + (dx / dist) * step
+          const ny = w.y + (dy / dist) * step
+          w.faceLeft = dx < 0
+          if (this.isNpcWalkable(nx, ny)) {
+            w.x = nx
+            w.y = ny
+          } else {
+            w.targetX = null
+            w.targetY = null
+            w.waitT = 2
+          }
+        }
+      } else {
+        w.waitT -= dt
+        if (w.waitT <= 0) {
+          const next = this.pickNearbyTarget(w.x, w.y, 2)
+          if (next) {
+            w.targetX = next.x
+            w.targetY = next.y
+          } else {
+            w.waitT = 2.5
+          }
+        }
+      }
+    }
+
     // slime hops along the southern path
     const s = this.slime
+    if (s.burnT > 0) {
+      s.burnT = Math.max(0, s.burnT - dt)
+      if (Math.random() < dt * 12) this.spawnFlameOn(s.x, SLIME_Y - 6)
+    }
     s.hopT += dt
     const period = 0.7
     const k = (s.hopT % period) / period
@@ -446,7 +772,7 @@ export class GameEngine {
       if (Math.abs(d.x - prevX) > 0.01) d.faceLeft = d.x < prevX
       d.nextFire -= dt
       if (d.nextFire <= 0 && d.fireT <= 0) {
-        d.fireT = 1.1
+        d.fireT = 1.2
         d.nextFire = 3.5 + Math.random() * 4.5
       }
       d.nextBolt -= dt
@@ -457,6 +783,7 @@ export class GameEngine {
         d.nextBolt = 5 + Math.random() * 6
         this.flash = Math.max(this.flash, 0.35)
         this.burst(d.boltX, d.boltY, 10, ['#ffffff', '#a8f0ff', '#fff6d6'])
+        this.addBurn(d.boltX, d.boltY, 'grass', 9)
       }
     }
     if (d.boltT > 0) d.boltT = Math.max(0, d.boltT - dt)
@@ -471,7 +798,7 @@ export class GameEngine {
           x: mouthX,
           y: mouthY + (Math.random() - 0.5) * 2,
           vx: dir * (55 + Math.random() * 45),
-          vy: (Math.random() - 0.5) * 26 + 10,
+          vy: (Math.random() - 0.5) * 26 + 12,
           life: 0,
           max: 0.45 + Math.random() * 0.3,
           color: ['#fff6d6', '#ffd47a', '#f39a5a', '#e0705f'][Math.floor(Math.random() * 4)],
@@ -880,18 +1207,76 @@ export class GameEngine {
       pt.y += pt.vy * dt
       pt.vx *= 0.96
       if (pt.isFire) {
+        // 1. Check NPC hits
         for (const id of NPC_IDS) {
           if (id === 'dragon') continue
           const a = this.npcAnchor(id)
-          if (Math.hypot(pt.x - a.x, pt.y - a.y) < 15) {
+          if (Math.hypot(pt.x - a.x, pt.y - a.y) < 16) {
             pt.isFire = false
             playNpcHitSound()
+            if (id === 'wizard') {
+              this.wizard.burnT = 3.2
+              this.wizard.panicDirT = 0
+            } else if (id === 'slime') {
+              this.slime.burnT = 2.5
+            } else if (id !== 'fish') {
+              this.friends[id].burnT = 2.5
+            }
             break
+          }
+        }
+        // 2. Check Buildings, Trees/Props, and Grass
+        if (pt.isFire && pt.life > pt.max * 0.45) {
+          const hitBuilding = BUILDINGS.find(
+            (b) => pt.x >= b.x * TILE && pt.x <= (b.x + b.w) * TILE && pt.y >= b.y * TILE && pt.y <= (b.y + b.h) * TILE,
+          )
+          if (hitBuilding) {
+            pt.isFire = false
+            this.addBurn(pt.x, pt.y, 'building', 10)
+          } else {
+            const hitProp = PROPS.find((pr) => Math.hypot(pt.x - (pr.col * TILE + 8), pt.y - (pr.row * TILE + 8)) < 14)
+            if (hitProp) {
+              pt.isFire = false
+              this.addBurn(hitProp.col * TILE + 8, hitProp.row * TILE + 6, 'prop', 11)
+            } else if (!isRiver(Math.floor(pt.x / TILE)) && Math.random() < 0.25) {
+              pt.isFire = false
+              this.addBurn(pt.x, pt.y, 'grass', 7)
+            }
           }
         }
       }
     }
     this.particles = this.particles.filter((pt) => pt.life < pt.max)
+
+    // Update burning grass, trees, and buildings
+    for (const b of this.burns) {
+      b.life += dt
+      if (Math.random() < dt * 10) {
+        this.particles.push({
+          x: b.x + (Math.random() - 0.5) * b.r,
+          y: b.y + (Math.random() - 0.5) * (b.r * 0.6),
+          vx: (Math.random() - 0.5) * 8,
+          vy: -12 - Math.random() * 14,
+          life: 0,
+          max: 0.35 + Math.random() * 0.25,
+          color: ['#fff6d6', '#ffd47a', '#f39a5a', '#e0705f'][Math.floor(Math.random() * 4)],
+          size: Math.random() > 0.5 ? 2 : 1,
+        })
+      }
+      if (Math.random() < dt * 3) {
+        this.particles.push({
+          x: b.x + (Math.random() - 0.5) * b.r,
+          y: b.y - 4,
+          vx: 3,
+          vy: -10,
+          life: 0,
+          max: 0.7,
+          color: 'rgba(60,50,65,0.45)',
+          size: 2,
+        })
+      }
+    }
+    this.burns = this.burns.filter((b) => b.life < b.max)
 
     const kind = SEASONS[this.season].weather
     for (const w of this.weather) {
@@ -962,6 +1347,17 @@ export class GameEngine {
     }
   }
 
+  private drawHeart(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
+    const px = Math.round(x)
+    const py = Math.round(y)
+    ctx.fillStyle = color
+    ctx.fillRect(px - 2, py - 1, 2, 1)
+    ctx.fillRect(px + 1, py - 1, 2, 1)
+    ctx.fillRect(px - 2, py, 5, 2)
+    ctx.fillRect(px - 1, py + 2, 3, 1)
+    ctx.fillRect(px, py + 3, 1, 1)
+  }
+
   private render() {
     const ctx = this.ctx
     const t = this.time
@@ -977,6 +1373,18 @@ export class GameEngine {
     drawBridges(ctx)
     for (const b of BUILDINGS) drawDoor(ctx, b, this.doors[b.id], t)
 
+    // Render scorch/ember glow on burning grass/props/buildings
+    for (const b of this.burns) {
+      const k = 1 - b.life / b.max
+      ctx.globalAlpha = 0.35 * k
+      ctx.fillStyle = '#3b2218'
+      ctx.fillRect(Math.round(b.x - b.r * 0.6), Math.round(b.y - b.r * 0.3), Math.round(b.r * 1.2), Math.round(b.r * 0.7))
+      ctx.globalAlpha = 0.65 * k
+      ctx.fillStyle = Math.sin(t * 16 + b.x) > 0 ? '#f39a5a' : '#ffd47a'
+      ctx.fillRect(Math.round(b.x - 2), Math.round(b.y - 2), 4, 3)
+      ctx.globalAlpha = 1
+    }
+
     const p = this.player
     const entities: { y: number; draw: () => void }[] = PROPS.map((prop) => ({
       y: prop.row * TILE + 14,
@@ -989,8 +1397,8 @@ export class GameEngine {
         draw: () => {
           ctx.fillStyle = 'rgba(59,42,63,0.22)'
           ctx.fillRect(Math.round(f.x - 5), Math.round(f.y + 4), 10, 2)
-          const idleFrame = Math.sin(t * 1.5 + f.x) > 0.92 ? 1 : 0
-          drawCharacter(ctx, Math.round(f.x - 6), Math.round(f.y - 11), f.dir, idleFrame, FRIEND_LOOKS[id])
+          const frame = f.targetX !== null ? WALK_FRAMES[f.frameIdx] : Math.sin(t * 1.5 + f.x) > 0.92 ? 1 : 0
+          drawCharacter(ctx, Math.round(f.x - 6), Math.round(f.y - 11), f.dir, frame, FRIEND_LOOKS[id])
         },
       })
     }
@@ -1011,8 +1419,12 @@ export class GameEngine {
 
     for (const pt of this.particles) {
       ctx.globalAlpha = 1 - pt.life / pt.max
-      ctx.fillStyle = pt.color
-      ctx.fillRect(Math.round(pt.x), Math.round(pt.y), pt.size, pt.size)
+      if (pt.kind === 'heart') {
+        this.drawHeart(ctx, pt.x, pt.y, pt.color)
+      } else {
+        ctx.fillStyle = pt.color
+        ctx.fillRect(Math.round(pt.x), Math.round(pt.y), pt.size, pt.size)
+      }
     }
     ctx.globalAlpha = 1
 
@@ -1095,6 +1507,7 @@ export class GameEngine {
       { x: this.wizard.x + (this.wizard.faceLeft ? -5 : 5), y: this.wizard.y - 14, r: 22 },
     ]
     if (this.dragon.fireT > 0) lights.push({ x: this.dragon.x + (this.dragon.faceLeft ? -18 : 18), y: this.dragon.y - 5, r: 34 })
+    for (const b of this.burns) lights.push({ x: b.x, y: b.y, r: 22 })
 
     const l = this.lightCtx
     if (l) {
