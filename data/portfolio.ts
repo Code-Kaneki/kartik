@@ -114,7 +114,7 @@ export type Semester = {
 }
 
 /** Change this to move the "current" marker along the roadmap. */
-export const currentSemester = 3
+export const currentSemester = 1
 
 export const roadmap: Semester[] = [
   { sem: 1, label: '1st Sem', title: 'Village Beginnings', skills: ['C', 'Java'], xp: 100, description: 'Learn the ancient tongues of programming: pointers, loops, classes and objects.' },

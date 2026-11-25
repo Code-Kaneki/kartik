@@ -5,7 +5,7 @@ import {
   type NpcId,
   type ZoneKey,
 } from '@/data/portfolio'
-import { playSfx } from '@/lib/sfx'
+import { playNpcHitSound, playSfx } from '@/lib/sfx'
 import {
   doorRect,
   drawBridges,
@@ -42,7 +42,7 @@ import { DAY_LENGTH, SEASONS, SEASON_ORDER, darknessAt, duskAt, type SeasonId } 
 
 type Phase = 'free' | 'opening' | 'stepIn' | 'irisOut' | 'inside' | 'irisIn' | 'stepOut' | 'closing' | 'talking'
 
-type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
+type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; isFire?: boolean }
 type Weather = { x: number; y: number; vx: number; vy: number; phase: number; sway: number; color: string; w: number; h: number }
 type Ripple = { x: number; y: number; t: number }
 type Light = { x: number; y: number; r: number }
@@ -114,7 +114,7 @@ export class GameEngine {
     FRIEND_IDS.map((id) => [id, { ...tileCenter(NPC_SPOTS[id].col, NPC_SPOTS[id].row), dir: 'down' as Dir }]),
   ) as Record<FriendId, { x: number; y: number; dir: Dir }>
   private wizard = { ...tileCenter(NPC_SPOTS.wizard.col, NPC_SPOTS.wizard.row), faceLeft: true }
-  private dragon = { ...tileCenter(NPC_SPOTS.dragon.col, NPC_SPOTS.dragon.row), faceLeft: false, fireT: 0 }
+  private dragon = { ...tileCenter(NPC_SPOTS.dragon.col, NPC_SPOTS.dragon.row), faceLeft: false, fireT: 0, nextFire: 4, flyT: 0, boltT: 0, boltX: 160, boltY: 90, nextBolt: 6 }
   private slime = { x: SLIME_RANGE.minCol * TILE + 8, dir: 1, hopT: 0, hop: 0, boostT: 0 }
   private fish = { x: RIVER_X, y: 140, down: true, jump: -1, nextJump: 4 }
 
@@ -436,8 +436,31 @@ export class GameEngine {
       }
     }
 
-    // dragon smoke and fire
+    // dragon flying patrol, random fire & random lightning
     const d = this.dragon
+    if (!paused('dragon')) {
+      d.flyT += dt * 0.35
+      const prevX = d.x
+      d.x = WIDTH * 0.5 + Math.sin(d.flyT) * (WIDTH * 0.36)
+      d.y = 78 + Math.sin(d.flyT * 2) * 36
+      if (Math.abs(d.x - prevX) > 0.01) d.faceLeft = d.x < prevX
+      d.nextFire -= dt
+      if (d.nextFire <= 0 && d.fireT <= 0) {
+        d.fireT = 1.1
+        d.nextFire = 3.5 + Math.random() * 4.5
+      }
+      d.nextBolt -= dt
+      if (d.nextBolt <= 0) {
+        d.boltT = 0.28
+        d.boltX = Math.max(24, Math.min(WIDTH - 24, d.x + (Math.random() - 0.5) * 90))
+        d.boltY = Math.max(48, Math.min(HEIGHT - 24, d.y + 20 + Math.random() * 60))
+        d.nextBolt = 5 + Math.random() * 6
+        this.flash = Math.max(this.flash, 0.35)
+        this.burst(d.boltX, d.boltY, 10, ['#ffffff', '#a8f0ff', '#fff6d6'])
+      }
+    }
+    if (d.boltT > 0) d.boltT = Math.max(0, d.boltT - dt)
+
     const mouthX = d.x + (d.faceLeft ? -9 : 9)
     const mouthY = d.y + 6 - 11
     if (d.fireT > 0) {
@@ -447,12 +470,13 @@ export class GameEngine {
         this.particles.push({
           x: mouthX,
           y: mouthY + (Math.random() - 0.5) * 2,
-          vx: dir * (50 + Math.random() * 40),
-          vy: (Math.random() - 0.5) * 30 - 6,
+          vx: dir * (55 + Math.random() * 45),
+          vy: (Math.random() - 0.5) * 26 + 10,
           life: 0,
-          max: 0.35 + Math.random() * 0.25,
+          max: 0.45 + Math.random() * 0.3,
           color: ['#fff6d6', '#ffd47a', '#f39a5a', '#e0705f'][Math.floor(Math.random() * 4)],
           size: Math.random() > 0.5 ? 2 : 3,
+          isFire: true,
         })
       }
     } else if (Math.random() < dt * 0.8) {
@@ -855,6 +879,17 @@ export class GameEngine {
       pt.x += pt.vx * dt
       pt.y += pt.vy * dt
       pt.vx *= 0.96
+      if (pt.isFire) {
+        for (const id of NPC_IDS) {
+          if (id === 'dragon') continue
+          const a = this.npcAnchor(id)
+          if (Math.hypot(pt.x - a.x, pt.y - a.y) < 15) {
+            pt.isFire = false
+            playNpcHitSound()
+            break
+          }
+        }
+      }
     }
     this.particles = this.particles.filter((pt) => pt.life < pt.max)
 
@@ -984,6 +1019,22 @@ export class GameEngine {
     for (const w of this.weather) {
       ctx.fillStyle = w.color
       ctx.fillRect(Math.round(w.x), Math.round(w.y), w.w, w.h)
+    }
+
+    if (this.dragon.boltT > 0) {
+      const bx = Math.round(this.dragon.boltX)
+      const by = Math.round(this.dragon.boltY)
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(bx, 0)
+      ctx.lineTo(bx - 5, by * 0.35)
+      ctx.lineTo(bx + 4, by * 0.65)
+      ctx.lineTo(bx, by)
+      ctx.stroke()
+      ctx.strokeStyle = '#a8f0ff'
+      ctx.lineWidth = 1
+      ctx.stroke()
     }
 
     this.renderLighting()

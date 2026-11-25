@@ -101,3 +101,16 @@ export function playSfx(name: SfxName) {
       break
   }
 }
+
+let lastNpcHitAt = 0
+
+export function playNpcHitSound() {
+  if (muted || typeof window === 'undefined') return
+  const now = performance.now()
+  if (now - lastNpcHitAt < 2200) return
+  lastNpcHitAt = now
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || ''
+  const el = new Audio(`${base}/sounds/npcs.mp3`)
+  el.volume = 0.85
+  void el.play().catch(() => {})
+}
