@@ -41,6 +41,8 @@ export function GameCanvas({ engineRef, onZone, onEnter, className }: Props) {
     const engine = new GameEngine(canvas, {
       onZone: (z) => callbacks.current.onZone(z),
       onEnter: (id) => callbacks.current.onEnter(id),
+      onTalk: () => {},
+      onWorld: () => {},
     })
     engineRef.current = engine
     engine.start()
