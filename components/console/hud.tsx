@@ -4,18 +4,21 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { buildings, profile, type BuildingId } from '@/data/portfolio'
 import { PixelIcon } from '@/components/pixel/pixel-icon'
+import type { WorldState } from '@/lib/game/engine'
+import { SEASONS } from '@/lib/game/seasons'
 import { playSfx } from '@/lib/sfx'
 
 const ORDER: BuildingId[] = ['home', 'projects', 'roadmap', 'contact']
 
 type Props = {
+  world: WorldState
   muted: boolean
   onToggleMute: () => void
   onFastTravel: (id: BuildingId) => void
   disabled: boolean
 }
 
-export function Hud({ muted, onToggleMute, onFastTravel, disabled }: Props) {
+export function Hud({ world, muted, onToggleMute, onFastTravel, disabled }: Props) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -41,6 +44,9 @@ export function Hud({ muted, onToggleMute, onFastTravel, disabled }: Props) {
       <h1 className="mr-auto truncate text-[8px] leading-relaxed tracking-tight text-lavender-light sm:text-[10px]">
         KARTIK RAJ <span className="text-sakura">{'\u2014'}</span> DEV QUEST
       </h1>
+      <span className="hidden items-center gap-1 bg-lavender-light px-1.5 py-1 text-ink sm:flex">
+        {SEASONS[world.season].label.toUpperCase()} {'·'} {world.night ? 'NIGHT' : 'DAY'}
+      </span>
       <span className="flex items-center gap-1 bg-sage px-1.5 py-1 text-ink">
         <PixelIcon name="blossom" className="size-2.5 text-peach-deep" />
         {profile.goalBadge}

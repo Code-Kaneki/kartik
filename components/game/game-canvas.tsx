@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import type { BuildingId, ZoneKey } from '@/data/portfolio'
-import { GameEngine } from '@/lib/game/engine'
+import type { BuildingId, NpcId, ZoneKey } from '@/data/portfolio'
+import { GameEngine, type WorldState } from '@/lib/game/engine'
 import { HEIGHT, WIDTH } from '@/lib/game/map'
 import { cn } from '@/lib/utils'
 
@@ -10,18 +10,20 @@ type Props = {
   engineRef: MutableRefObject<GameEngine | null>
   onZone: (zone: ZoneKey) => void
   onEnter: (id: BuildingId) => void
+  onTalk: (id: NpcId) => void
+  onWorld: (state: WorldState) => void
   className?: string
 }
 
-export function GameCanvas({ engineRef, onZone, onEnter, className }: Props) {
+export function GameCanvas({ engineRef, onZone, onEnter, onTalk, onWorld, className }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const callbacks = useRef({ onZone, onEnter })
+  const callbacks = useRef({ onZone, onEnter, onTalk, onWorld })
   const [size, setSize] = useState({ w: 0, h: 0 })
 
   useEffect(() => {
-    callbacks.current = { onZone, onEnter }
-  }, [onZone, onEnter])
+    callbacks.current = { onZone, onEnter, onTalk, onWorld }
+  }, [onZone, onEnter, onTalk, onWorld])
 
   useEffect(() => {
     const wrap = wrapRef.current
@@ -41,8 +43,8 @@ export function GameCanvas({ engineRef, onZone, onEnter, className }: Props) {
     const engine = new GameEngine(canvas, {
       onZone: (z) => callbacks.current.onZone(z),
       onEnter: (id) => callbacks.current.onEnter(id),
-      onTalk: () => {},
-      onWorld: () => {},
+      onTalk: (id) => callbacks.current.onTalk(id),
+      onWorld: (state) => callbacks.current.onWorld(state),
     })
     engineRef.current = engine
     engine.start()
@@ -70,7 +72,7 @@ export function GameCanvas({ engineRef, onZone, onEnter, className }: Props) {
         style={{ width: size.w || '100%', height: size.h || 'auto' }}
         className="pixelated block cursor-pointer touch-none select-none"
         role="img"
-        aria-label="Pixel art village with Kartik's House, the Project Guild Hall, the Dojo and the Post Office. Click to walk, or use the Fast Travel menu to open a section."
+        aria-label="Pixel art village with Kartik's House, the Project Guild Hall, the Dojo, the Post Office, friends and creatures. Click to walk or talk."
       />
     </div>
   )

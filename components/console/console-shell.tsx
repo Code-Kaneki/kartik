@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { buildings, dialogue, type BuildingId, type ZoneKey } from '@/data/portfolio'
+import { buildings, dialogue, type BuildingId, type NpcId, type ZoneKey } from '@/data/portfolio'
 import { GameCanvas } from '@/components/game/game-canvas'
 import { ActionButtons, DPad, SpeakerGrill, Stickers } from '@/components/console/controls'
 import { DialogueBox } from '@/components/console/dialogue-box'
@@ -12,8 +12,10 @@ import { AboutModal } from '@/components/modals/about-modal'
 import { ProjectsModal } from '@/components/modals/projects-modal'
 import { RoadmapModal } from '@/components/modals/roadmap-modal'
 import { ContactModal } from '@/components/modals/contact-modal'
+import { NpcModal } from '@/components/modals/npc-modal'
 import type { Dir } from '@/lib/game/draw'
-import type { GameEngine } from '@/lib/game/engine'
+import type { GameEngine, WorldState } from '@/lib/game/engine'
+import type { SeasonId } from '@/lib/game/seasons'
 import { playSfx, setSfxMuted } from '@/lib/sfx'
 
 const KEY_DIRS: Record<string, Dir> = {
@@ -30,6 +32,7 @@ const KEY_DIRS: Record<string, Dir> = {
 const A_KEYS = new Set(['Enter', ' ', 'e', 'z', 'j'])
 const B_KEYS = new Set(['Escape', 'b', 'x'])
 const BUILDING_IDS = new Set<string>(['home', 'projects', 'roadmap', 'contact'])
+const NPC_IDS = new Set<string>(['mahi', 'rishi', 'raunak', 'sam', 'wizard', 'dragon', 'slime', 'fish'])
 
 const MODAL_CONTENT: Record<BuildingId, { subtitle: string; body: React.ReactNode }> = {
   home: { subtitle: 'Character Profile', body: <AboutModal /> },
@@ -47,17 +50,31 @@ function isTypingTarget(target: EventTarget | null) {
 export function ConsoleShell() {
   const engineRef = useRef<GameEngine | null>(null)
   const [modal, setModal] = useState<BuildingId | null>(null)
+  const [talkNpc, setTalkNpc] = useState<NpcId | null>(null)
+  const [world, setWorld] = useState<WorldState>({ season: 'spring', night: false })
   const [zone, setZone] = useState<ZoneKey>('intro')
   const [muted, setMuted] = useState(false)
   const modalRef = useRef(modal)
+  const talkRef = useRef(talkNpc)
 
   useEffect(() => {
     modalRef.current = modal
   }, [modal])
 
+  useEffect(() => {
+    talkRef.current = talkNpc
+  }, [talkNpc])
+
   const handleEnter = useCallback((id: BuildingId) => setModal(id), [])
+  const handleTalk = useCallback((id: NpcId) => setTalkNpc(id), [])
 
   const closeModal = useCallback(() => {
+    if (talkRef.current) {
+      setTalkNpc(null)
+      playSfx('close')
+      engineRef.current?.endTalk()
+      return
+    }
     if (!modalRef.current) return
     setModal(null)
     playSfx('close')
@@ -65,23 +82,35 @@ export function ConsoleShell() {
   }, [])
 
   const handleDir = useCallback((dir: Dir, down: boolean) => {
-    if (modalRef.current) return
+    if (modalRef.current || talkRef.current) return
     engineRef.current?.setHeld(dir, down)
   }, [])
 
   const handleA = useCallback(() => {
-    if (modalRef.current) return
+    if (modalRef.current || talkRef.current) return
     engineRef.current?.interact()
   }, [])
 
   const handleB = useCallback(() => {
-    if (modalRef.current) closeModal()
+    if (modalRef.current || talkRef.current) closeModal()
     else playSfx('blip')
   }, [closeModal])
 
   const handleFastTravel = useCallback((id: BuildingId) => {
-    if (modalRef.current) return
+    if (modalRef.current || talkRef.current) return
     engineRef.current?.fastTravel(id)
+  }, [])
+
+  const handleNpcAction = useCallback((id: NpcId) => {
+    engineRef.current?.npcAction(id)
+  }, [])
+
+  const handleSetTime = useCallback((kind: 'day' | 'night') => {
+    engineRef.current?.setTimeOfDay(kind)
+  }, [])
+
+  const handleSetSeason = useCallback((season: SeasonId) => {
+    engineRef.current?.setSeason(season)
   }, [])
 
   const toggleMute = useCallback(() => {
@@ -97,7 +126,7 @@ export function ConsoleShell() {
     const onKeyDown = (e: KeyboardEvent) => {
       const typing = isTypingTarget(e.target)
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
-      if (modalRef.current) {
+      if (modalRef.current || talkRef.current) {
         if (key === 'Escape' || (!typing && B_KEYS.has(key))) {
           e.preventDefault()
           closeModal()
@@ -134,11 +163,12 @@ export function ConsoleShell() {
   }, [closeModal])
 
   useEffect(() => {
-    if (modal) engineRef.current?.clearHeld()
-  }, [modal])
+    if (modal || talkNpc) engineRef.current?.clearHeld()
+  }, [modal, talkNpc])
 
   const line = dialogue[zone]
   const nearDoor = BUILDING_IDS.has(zone)
+  const nearNpc = NPC_IDS.has(zone)
 
   return (
     <main className="flex h-dvh w-full items-center justify-center overflow-hidden bg-lavender-light bg-pixel-dots p-2 sm:p-4">
@@ -162,17 +192,25 @@ export function ConsoleShell() {
           aria-label="Game screen"
           className="relative flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border-4 border-ink bg-screen landscape:h-full landscape:flex-1"
         >
-          <Hud muted={muted} onToggleMute={toggleMute} onFastTravel={handleFastTravel} disabled={modal !== null} />
+          <Hud
+            world={world}
+            muted={muted}
+            onToggleMute={toggleMute}
+            onFastTravel={handleFastTravel}
+            disabled={modal !== null || talkNpc !== null}
+          />
           <GameCanvas
             engineRef={engineRef}
             onZone={setZone}
             onEnter={handleEnter}
+            onTalk={handleTalk}
+            onWorld={setWorld}
             className="aspect-[384/224] w-full landscape:aspect-auto landscape:min-h-0 landscape:flex-1"
           />
           <DialogueBox
             speaker={line.speaker}
             text={line.text}
-            hint={nearDoor ? 'A: ENTER' : 'CLICK TO WALK'}
+            hint={nearDoor ? 'A: ENTER' : nearNpc ? 'A: TALK' : 'CLICK TO WALK'}
           />
           <AnimatePresence>
             {modal && (
@@ -185,6 +223,17 @@ export function ConsoleShell() {
               >
                 {MODAL_CONTENT[modal].body}
               </RpgModal>
+            )}
+            {talkNpc && (
+              <NpcModal
+                key={talkNpc}
+                id={talkNpc}
+                world={world}
+                onClose={closeModal}
+                onAction={handleNpcAction}
+                onSetTime={handleSetTime}
+                onSetSeason={handleSetSeason}
+              />
             )}
           </AnimatePresence>
         </section>
@@ -206,7 +255,7 @@ export function ConsoleShell() {
           <Stickers />
           <ActionButtons onA={handleA} onB={handleB} />
           <SpeakerGrill className="mt-2" />
-          <p className="font-pixel text-[6px] leading-relaxed text-ink-soft">A: ENTER {'\u00B7'} B: CLOSE</p>
+          <p className="font-pixel text-[6px] leading-relaxed text-ink-soft">A: ENTER {'·'} B: CLOSE</p>
         </aside>
       </div>
     </main>
